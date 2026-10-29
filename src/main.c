@@ -9,6 +9,9 @@
 #include "../include/quarantine.h"
 #include "../include/hash.h"
 #include "../include/update.h"
+#include "../include/watcher.h"
+#include "../include/yrscan.h"
+#include "../include/config.h"
 #include <curl/curl.h>
 
 
@@ -46,7 +49,7 @@ void print_banner(void) {
 
     printf(COLOR_YELLOW
         "  ═══════════════════════════════════════════════════════════════════════════\n"
-        "   \xF0\x9F\x9B\xA1  HashGuard v1.2 — Sentinel  |  Signature intelligence & threat scan\n"
+        "   \xF0\x9F\x9B\xA1  HashGuard v1.3 — Sentinel  |  Signature intelligence & threat scan\n"
         "  ═══════════════════════════════════════════════════════════════════════════\n"
         COLOR_RESET);
 
@@ -75,6 +78,8 @@ int main(int argc, char *argv[]) {
     print_banner();
     log_message(LOG_INFO, "Smart Antivirus CLI starting up...");
 
+    config_load("data/config.txt");
+
     if (sigdb_load("data/signatures.txt") != 0) {
         log_message(LOG_ERROR, "Failed to load signature database!");
         return 1;
@@ -97,6 +102,8 @@ int main(int argc, char *argv[]) {
         // Parse flags BEFORE scanning so that e.g. --quarantine takes effect.
         int want_summary = 0;
         int threads = 4;
+        const char *cfg_threads = config_get("threads");
+        if (cfg_threads) threads = atoi(cfg_threads);
         for (int i = 3; i < argc; i++) {
             if (strcmp(argv[i], "--summary") == 0)
                 want_summary = 1;
@@ -123,9 +130,12 @@ int main(int argc, char *argv[]) {
     else if (strcmp(command, "check") == 0 && argc >= 3) {
         const char *file = argv[2];
         log_message(LOG_INFO, "Checking file: %s", file);
-        char hash[65];
-        if (sha256_of_file(file, hash) == 0) {
-            if (sigdb_is_malicious(hash))
+        char md5[MD5_HEX_LEN + 1], sha1[SHA1_HEX_LEN + 1], sha256[SHA256_HEX_LEN + 1];
+        if (hash_file_all(file, md5, sha1, sha256) == 0) {
+            int infected = sigdb_is_malicious_hex(md5, HASH_ALGO_MD5) ||
+                           sigdb_is_malicious_hex(sha1, HASH_ALGO_SHA1) ||
+                           sigdb_is_malicious_hex(sha256, HASH_ALGO_SHA256);
+            if (infected)
                 log_message(LOG_WARN, "⚠️  Threat detected in %s", file);
             else
                 log_message(LOG_INFO, "✅ No threats found in %s", file);
@@ -145,6 +155,17 @@ int main(int argc, char *argv[]) {
     else if (strcmp(command, "restore") == 0 && argc >= 3) {
         log_message(LOG_INFO, "Restoring file: %s", argv[2]);
         quarantine_restore(argv[2]);
+    }
+
+    // ----------------------------- WATCH DIRECTORY -----------------------------
+    else if (strcmp(command, "watch") == 0 && argc >= 3) {
+        log_message(LOG_INFO, "Entering watch mode for: %s", argv[2]);
+        watch_directory(argv[2]);
+    }
+
+    // ----------------------------- YARA SCAN -----------------------------
+    else if (strcmp(command, "yara") == 0 && argc >= 4) {
+        yrscan_file(argv[2], argv[3]);
     }
 
     // ----------------------------- INFO -----------------------------
@@ -175,17 +196,19 @@ void print_help(void) {
     printf("  ./antivirus scan <directory> [--summary] [--quarantine] [--threads N]\n");
     printf("  ./antivirus check <file>\n");
     printf("  ./antivirus update\n");
+    printf("  ./antivirus watch <directory>\n");
+    printf("  ./antivirus yara <rules.yar> <file>\n");
     printf("  ./antivirus restore <filename>\n");
     printf("  ./antivirus info\n");
     printf("  ./antivirus --help\n\n");
 }
 
 void print_info(void) {
-    printf("\nSmart Antivirus v1.2 (C version) — Sentinel\n");
+    printf("\nSmart Antivirus v1.3 (C version) — Sentinel\n");
     printf("Developer: Fatih Özdil\n");
-    printf("Modules: Logger | Scanner | SigDB | Bloom Filter | UTHash | Quarantine | Update | AI\n");
-    printf("Signature DB: data/signatures.txt\n");
-    printf("Features: CLI, Summary, JSON Report, Quarantine+Restore, Update, AI heuristics, Multi-threaded scan, Whitelist\n\n");
+    printf("Modules: Logger | Scanner | SigDB | Bloom Filter | UTHash | Quarantine | Update | AI | Watcher\n");
+    printf("Signature DB: data/signatures.txt (MD5 / SHA-1 / SHA-256)\n");
+    printf("Features: CLI, Summary, JSON Report, Quarantine+Restore, Update, AI heuristics, Multi-threaded scan, Whitelist, Watch mode\n\n");
 }
 
 void print_summary(int total, int infected, double seconds) {

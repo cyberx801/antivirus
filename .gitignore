@@ -9,5 +9,6 @@
 /data/cache/
 /data/report.json
 /data/signatures_meta.json
+/data/signatures.txt.cache
 /quarantine/
 /testscan/

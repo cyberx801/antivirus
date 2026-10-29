@@ -1,0 +1,12 @@
+# HashGuard configuration
+# Lines are "key = value"; '#' starts a comment.
+
+# Default number of worker threads for scanning (can be overridden by --threads N)
+threads = 4
+
+# Path to the whitelist file (files whose path contains a listed substring are skipped)
+whitelist = data/whitelist.txt
+
+# Threat-intel feed URLs for `update` (one per line, may be repeated).
+# If no feed is configured, a built-in keyless feed is used.
+# feed = https://example.com/feed/sha256.txt

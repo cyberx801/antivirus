@@ -1,5 +1,6 @@
 #include "update.h"
 #include "logger.h"
+#include "config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,9 +21,9 @@
 #define MAX_FEEDS    4
 
 typedef struct {
-    const char *name;
-    const char *url;
-    const char *cache_path;
+    char name[64];
+    char url[512];
+    char cache_path[512];
     int added_hashes;   // how many valid hashes extracted from this feed
 } FeedSource;
 
@@ -105,8 +106,12 @@ static int download_file(const char *url, const char *out_path) {
 }
 
 /**
- * @brief Extract valid 64-char hex hashes from file into memory.
+ * @brief Extract valid 32/40/64-char hex hashes from file into memory.
  */
+static int is_hex_char(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 static int extract_hashes(const char *infile, char hashes[][65], int *count) {
     FILE *fp = fopen(infile, "r");
     if (!fp) {
@@ -121,25 +126,23 @@ static int extract_hashes(const char *infile, char hashes[][65], int *count) {
         line[strcspn(line, "\r\n")] = 0;
 
         // Skip comment/empty
-        if (line[0] == '#' || strlen(line) < 64)
+        if (line[0] == '#')
             continue;
 
-        // Extract first 64 hex chars only
+        // Find the first hex character
+        char *start = line;
+        while (*start && !is_hex_char(*start))
+            start++;
+
+        // Collect the maximal run of hex characters (up to 64)
         char hex[65];
         int pos = 0;
+        for (char *p = start; *p && is_hex_char(*p) && pos < 64; p++)
+            hex[pos++] = *p;
+        hex[pos] = 0;
 
-        for (int i = 0; line[i] && pos < 64; i++) {
-            if ((line[i] >= '0' && line[i] <= '9') ||
-                (line[i] >= 'a' && line[i] <= 'f') ||
-                (line[i] >= 'A' && line[i] <= 'F'))
-            {
-                hex[pos++] = line[i];
-            }
-        }
-
-        if (pos == 64) {
+        if (pos == 32 || pos == 40 || pos == 64) {
             if (*count >= MAX_HASHES) break;  // hard cap to prevent buffer overflow
-            hex[64] = 0;
             strcpy(hashes[*count], hex);
             (*count)++;
             added++;
@@ -250,18 +253,28 @@ void update_signatures(void) {
     ensure_dir("data");
     ensure_dir("data/cache");
 
-    FeedSource feeds[] = {
+    FeedSource feeds[MAX_FEEDS];
+    int feed_count = 0;
 
-        {
-            "ThreatCluster_SHA256",
-            "https://threatcluster.io/api/iocs/public/hashes.txt",
-            "data/cache/threatcluster_hashes.txt",
-            0
-        },
+    /* Use feeds from the config file if any are defined ... */
+    for (int i = 0; i < config_feed_count() && feed_count < MAX_FEEDS; i++) {
+        const char *u = config_feed(i);
+        if (!u || !*u) continue;
+        snprintf(feeds[feed_count].name, sizeof(feeds[feed_count].name), "ConfigFeed_%d", feed_count + 1);
+        snprintf(feeds[feed_count].url, sizeof(feeds[feed_count].url), "%s", u);
+        snprintf(feeds[feed_count].cache_path, sizeof(feeds[feed_count].cache_path), "data/cache/feed_%d.txt", feed_count + 1);
+        feeds[feed_count].added_hashes = 0;
+        feed_count++;
+    }
 
-    };
-
-    const int feed_count = sizeof(feeds) / sizeof(feeds[0]);
+    /* ... otherwise fall back to the built-in keyless feed. */
+    if (feed_count == 0) {
+        snprintf(feeds[0].name, sizeof(feeds[0].name), "%s", "ThreatCluster_SHA256");
+        snprintf(feeds[0].url, sizeof(feeds[0].url), "%s", "https://threatcluster.io/api/iocs/public/hashes.txt");
+        snprintf(feeds[0].cache_path, sizeof(feeds[0].cache_path), "%s", "data/cache/threatcluster_hashes.txt");
+        feeds[0].added_hashes = 0;
+        feed_count = 1;
+    }
     char (*hashes)[65] = malloc(sizeof(char[65]) * MAX_HASHES);
     if (!hashes) {
         log_message(LOG_ERROR, "Failed to allocate memory for hashes (MAX_HASHES=%d)", MAX_HASHES);

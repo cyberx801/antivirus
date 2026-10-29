@@ -20,4 +20,5 @@ void log_message(LogLevel level, const char *format, ...) {
     va_end(args);
 
     printf("\n");
+    fflush(stdout);
 }

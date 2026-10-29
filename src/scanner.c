@@ -7,6 +7,7 @@
 #include "../include/quarantine.h"
 #include "../include/ai.h"
 #include "../include/threadutil.h"
+#include "../include/config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,21 +102,25 @@ static char *queue_pop(void) {
 /* ---------------- per-file processing (worker threads) ---------------- */
 
 static void process_file(const char *fpath) {
-    char hash[65];
-    if (sha256_of_file(fpath, hash) != 0) {
+    char md5[MD5_HEX_LEN + 1], sha1[SHA1_HEX_LEN + 1], sha256[SHA256_HEX_LEN + 1];
+    if (hash_file_all(fpath, md5, sha1, sha256) != 0) {
         log_message(LOG_WARN, "Could not open file: %s", fpath);
         return;
     }
 
-    // Check against the signature database (Bloom filter -> exact UTHash lookup)
-    int infected = sigdb_is_malicious(hash);
+    // Check against the signature database (any of MD5/SHA-1/SHA-256)
+    int infected = 0;
+    if (sigdb_is_malicious_hex(md5, HASH_ALGO_MD5) ||
+        sigdb_is_malicious_hex(sha1, HASH_ALGO_SHA1) ||
+        sigdb_is_malicious_hex(sha256, HASH_ALGO_SHA256))
+        infected = 1;
 
     // AI-assisted heuristic analysis (entropy + optional LLM hook)
-    ai_result_t ai = ai_analyze_file(fpath, hash);
+    ai_result_t ai = ai_analyze_file(fpath, sha256);
     int suspicious = (!infected && ai.verdict);
 
     // Add result to report.json (internally synchronized)
-    report_add_result(fpath, hash, infected, suspicious, ai.score, ai.entropy);
+    report_add_result(fpath, sha256, infected, suspicious, ai.score, ai.entropy);
 
     tu_mutex_lock(counters_mtx);
     total_count++;
@@ -124,7 +129,7 @@ static void process_file(const char *fpath) {
 
     if (infected) {
         log_message(LOG_ERROR, "[INFECTED] %s", fpath);
-        move_to_quarantine(fpath, hash);
+        move_to_quarantine(fpath, sha256);
     } else if (suspicious) {
         log_message(LOG_WARN, "[SUSPICIOUS] %s (ai score %.0f, entropy %.2f)", fpath, ai.score, ai.entropy);
     } else {
@@ -208,7 +213,8 @@ int scan_directory(const char *path, int *total_files, int threads) {
     skipped_count = 0;
 
     report_start(path);
-    load_whitelist("data/whitelist.txt");
+    const char *wl_path = config_get("whitelist");
+    load_whitelist(wl_path ? wl_path : "data/whitelist.txt");
 
     tu_mutex_init(&counters_mtx);
     tu_mutex_init(&queue_mtx);

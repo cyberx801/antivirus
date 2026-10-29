@@ -1,46 +1,105 @@
 #include "../include/hash.h"
 #include <stdio.h>
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 
-/**
- * @brief Calculates the SHA-256 hash of a given file.
- *
- * This function reads the file in 1 KB chunks, updates the hash context,
- * and finally produces a 64-character hexadecimal hash string.
- *
- * @param filename Path to the input file.
- * @param output_hex Pointer to a char buffer with at least 65 bytes.
- *                   (64 hex characters + null terminator)
- * @return 0 on success, -1 on error (e.g. file cannot be opened).
- */
-int sha256_of_file(const char *filename, char *output_hex) {
-    FILE *file = fopen(filename, "rb");
-    if (!file) {
-        return -1;  // File could not be opened
+/* Write digest bytes as lowercase hex into out (buffer >= 2*digest_len + 1). */
+static void bin2hex(const unsigned char *digest, unsigned dlen, char *out) {
+    for (unsigned i = 0; i < dlen; i++)
+        sprintf(out + i * 2, "%02x", digest[i]);
+    out[dlen * 2] = '\0';
+}
+
+/* Compute one digest over the whole file (streamed). */
+static int digest_hex_of_file(const char *filename, const EVP_MD *md, char *out, unsigned hex_len) {
+    FILE *f = fopen(filename, "rb");
+    if (!f) return -1;
+
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx) { fclose(f); return -1; }
+    if (EVP_DigestInit_ex(ctx, md, NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        fclose(f);
+        return -1;
     }
 
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
+    unsigned char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        EVP_DigestUpdate(ctx, buf, n);
 
-    unsigned char buffer[1024];
-    size_t bytesRead;
+    fclose(f);
 
-    // ✅ spelling fixed: bytesRead (not bytesReaf)
-    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) != 0) {
-        SHA256_Update(&ctx, buffer, bytesRead);
-    }
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    unsigned dlen = 0;
+    EVP_DigestFinal_ex(ctx, digest, &dlen);
+    EVP_MD_CTX_free(ctx);
 
-    fclose(file);
-
-    // ✅ spelling fixed: unsigned, not unsined
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_Final(hash, &ctx);
-
-    // Convert binary hash to hexadecimal string
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        sprintf(output_hex + (i * 2), "%02x", hash[i]);
-    }
-
-    output_hex[64] = '\0';  // Null-terminate string
+    bin2hex(digest, dlen, out);
+    out[hex_len] = '\0';
     return 0;
+}
+
+int md5_hex_of_file(const char *filename, char out_hex[MD5_HEX_LEN + 1]) {
+    return digest_hex_of_file(filename, EVP_md5(), out_hex, MD5_HEX_LEN);
+}
+
+int sha1_hex_of_file(const char *filename, char out_hex[SHA1_HEX_LEN + 1]) {
+    return digest_hex_of_file(filename, EVP_sha1(), out_hex, SHA1_HEX_LEN);
+}
+
+int sha256_of_file(const char *filename, char out_hex[SHA256_HEX_LEN + 1]) {
+    return digest_hex_of_file(filename, EVP_sha256(), out_hex, SHA256_HEX_LEN);
+}
+
+int hash_file_all(const char *filename,
+                  char md5[MD5_HEX_LEN + 1],
+                  char sha1[SHA1_HEX_LEN + 1],
+                  char sha256[SHA256_HEX_LEN + 1]) {
+    FILE *f = fopen(filename, "rb");
+    if (!f) return -1;
+
+    EVP_MD_CTX *m = EVP_MD_CTX_new();
+    EVP_MD_CTX *s1 = EVP_MD_CTX_new();
+    EVP_MD_CTX *s2 = EVP_MD_CTX_new();
+    if (!m || !s1 || !s2) {
+        if (m) EVP_MD_CTX_free(m);
+        if (s1) EVP_MD_CTX_free(s1);
+        if (s2) EVP_MD_CTX_free(s2);
+        fclose(f);
+        return -1;
+    }
+
+    EVP_DigestInit_ex(m, EVP_md5(), NULL);
+    EVP_DigestInit_ex(s1, EVP_sha1(), NULL);
+    EVP_DigestInit_ex(s2, EVP_sha256(), NULL);
+
+    unsigned char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        EVP_DigestUpdate(m, buf, n);
+        EVP_DigestUpdate(s1, buf, n);
+        EVP_DigestUpdate(s2, buf, n);
+    }
+    fclose(f);
+
+    unsigned char d[EVP_MAX_MD_SIZE];
+    unsigned dl = 0;
+
+    EVP_DigestFinal_ex(m, d, &dl);  bin2hex(d, dl, md5);
+    EVP_DigestFinal_ex(s1, d, &dl); bin2hex(d, dl, sha1);
+    EVP_DigestFinal_ex(s2, d, &dl); bin2hex(d, dl, sha256);
+
+    EVP_MD_CTX_free(m);
+    EVP_MD_CTX_free(s1);
+    EVP_MD_CTX_free(s2);
+    return 0;
+}
+
+hash_algo_t algo_from_hex_len(size_t hex_len) {
+    switch (hex_len) {
+        case MD5_HEX_LEN:    return HASH_ALGO_MD5;
+        case SHA1_HEX_LEN:   return HASH_ALGO_SHA1;
+        case SHA256_HEX_LEN: return HASH_ALGO_SHA256;
+        default:             return HASH_ALGO_COUNT; /* unknown */
+    }
 }
