@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "../include/logger.h"
 #include "../include/sigdb.h"
 #include "../include/scanner.h"
@@ -49,7 +52,7 @@ void print_banner(void) {
 
     printf(COLOR_YELLOW
         "  ═══════════════════════════════════════════════════════════════════════════\n"
-        "   \xF0\x9F\x9B\xA1  HashGuard v1.3 — Sentinel  |  Signature intelligence & threat scan\n"
+        "   [>]  HashGuard v1.3 — Sentinel  |  Signature intelligence & threat scan\n"
         "  ═══════════════════════════════════════════════════════════════════════════\n"
         COLOR_RESET);
 
@@ -74,6 +77,12 @@ void print_summary(int total, int infected, double seconds);
 
 
 int main(int argc, char *argv[]) {
+
+#ifdef _WIN32
+    /* Make the console interpret our UTF-8 output correctly. */
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
 
     print_banner();
     log_message(LOG_INFO, "Smart Antivirus CLI starting up...");
