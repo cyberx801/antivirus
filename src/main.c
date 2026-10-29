@@ -15,29 +15,47 @@
 #define COLOR_RED     "\x1b[31m"
 #define COLOR_GREEN   "\x1b[32m"
 #define COLOR_YELLOW  "\x1b[33m"
-#define COLOR_CYAN    "\x1b[36m"
+#define COLOR_BLUE    "\x1b[34m"
 #define COLOR_MAGENTA "\x1b[35m"
+#define COLOR_CYAN    "\x1b[36m"
 #define COLOR_WHITE   "\x1b[37m"
+#define COLOR_BOLD    "\x1b[1m"
+#define COLOR_DIM     "\x1b[2m"
 
 void print_banner(void) {
-    printf(COLOR_CYAN
-        "\n"
-        "██╗  ██╗ █████╗ ███████╗██╗  ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗ \n"
-        "██║  ██║██╔══██╗██╔════╝██║  ██║██╔═══██╗██║   ██║██╔══██╗██╔══██╗██╔══██╗\n"
-        "███████║███████║███████╗███████║██║   ██║██║   ██║███████║██████╔╝██║  ██║\n"
-        "██╔══██║██╔══██║╚════██║██╔══██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║\n"
-        "██║  ██║██║  ██║███████║██║  ██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝\n"
-        "╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ \n"
+    printf("\n");
+    printf(COLOR_BOLD COLOR_CYAN
+        "  ██╗  ██╗ █████╗ ███████╗██╗  ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗\n"
+        COLOR_RESET);
+    printf(COLOR_BOLD COLOR_CYAN
+        "  ██║  ██║██╔══██╗██╔════╝██║  ██║██╔═══██╗██║   ██║██╔══██╗██╔══██╗██╔══██╗\n"
+        COLOR_RESET);
+    printf(COLOR_BOLD COLOR_GREEN
+        "  ███████║███████║███████╗███████║██║   ██║██║   ██║███████║██████╔╝██║  ██║\n"
+        COLOR_RESET);
+    printf(COLOR_BOLD COLOR_BLUE
+        "  ██╔══██║██╔══██║╚════██║██╔══██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║\n"
+        COLOR_RESET);
+    printf(COLOR_BOLD COLOR_MAGENTA
+        "  ██║  ██║██║  ██║███████║██║  ██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝\n"
+        COLOR_RESET);
+    printf(COLOR_BOLD COLOR_RED
+        "  ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝\n"
         COLOR_RESET);
 
     printf(COLOR_YELLOW
-        "--------------------------------------------------------------------------\n"
-        "   🛡️  HASHGUARD v1.0  —  Lightweight Threat Scanner & Updater\n"
+        "  ═══════════════════════════════════════════════════════════════════════════\n"
+        "   \xF0\x9F\x9B\xA1  HashGuard v1.1 — Sentinel  |  Signature intelligence & threat scan\n"
+        "  ═══════════════════════════════════════════════════════════════════════════\n"
+        COLOR_RESET);
+
+    printf(COLOR_DIM
         "   Developer : Fatih Özdil\n"
-        "   Modules   : Logger | Scanner | SigDB | Update | Quarantine\n"
+        "   Engine    : SHA-256 · Bloom filter · UTHash · cURL · AI heuristics\n"
+        "   Modules   : Logger | Scanner | SigDB | Update | Quarantine | AI\n"
         "   Build     : %s %s\n"
-        "--------------------------------------------------------------------------\n\n"
         COLOR_RESET, __DATE__, __TIME__);
+    printf("\n");
 }
 
 
@@ -153,11 +171,11 @@ void print_help(void) {
 }
 
 void print_info(void) {
-    printf("\nSmart Antivirus v1.0 (C version)\n");
+    printf("\nSmart Antivirus v1.1 (C version) — Sentinel\n");
     printf("Developer: Fatih Özdil\n");
-    printf("Modules: Logger | Scanner | SigDB | Bloom Filter | UTHash\n");
+    printf("Modules: Logger | Scanner | SigDB | Bloom Filter | UTHash | Quarantine | Update | AI\n");
     printf("Signature DB: data/signatures.txt\n");
-    printf("Features: CLI, Summary, JSON Report, Quarantine, Update\n\n");
+    printf("Features: CLI, Summary, JSON Report, Quarantine, Update, AI heuristics\n\n");
 }
 
 void print_summary(int total, int infected, double seconds) {

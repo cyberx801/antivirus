@@ -4,6 +4,7 @@
 #include "../include/logger.h"
 #include "../include/report.h"
 #include "../include/quarantine.h"
+#include "../include/ai.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -32,16 +33,22 @@ static void process_file(const char *fpath) {
         return;
     }
 
-    // Check against the signature database
+    // Check against the signature database (Bloom filter -> exact UTHash lookup)
     int infected = sigdb_is_malicious(hash);
 
+    // AI-assisted heuristic analysis (entropy + optional LLM hook)
+    ai_result_t ai = ai_analyze_file(fpath, hash);
+    int suspicious = (!infected && ai.verdict);
+
     // Add result to report.json
-    report_add_result(fpath, hash, infected);
+    report_add_result(fpath, hash, infected, suspicious, ai.score, ai.entropy);
 
     if (infected) {
         log_message(LOG_ERROR, "[INFECTED] %s", fpath);
         infected_count++;
         move_to_quarantine(fpath, hash);
+    } else if (suspicious) {
+        log_message(LOG_WARN, "[SUSPICIOUS] %s (ai score %.0f, entropy %.2f)", fpath, ai.score, ai.entropy);
     } else {
         log_message(LOG_INFO, "[CLEAN] %s", fpath);
     }

@@ -16,7 +16,12 @@ add_executable(antivirus
         src/report.c
         src/quarantine.c
         src/update.c
+        src/ai.c
 )
+
+if(MSVC)
+    target_compile_options(antivirus PRIVATE /utf-8)
+endif()
 
 
 # Paketleri bul

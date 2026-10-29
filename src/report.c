@@ -10,6 +10,9 @@ typedef struct {
     char file[512];
     char hash[65];
     int infected;
+    int suspicious;
+    double ai_score;
+    double entropy;
 } ScanResult;
 
 static ScanResult results[MAX_RESULTS];
@@ -39,11 +42,14 @@ void report_start(const char *path) {
 }
 
 // Add a file result
-void report_add_result(const char *file, const char *hash, int infected) {
+void report_add_result(const char *file, const char *hash, int infected, int suspicious, double ai_score, double entropy) {
     if (result_count >= MAX_RESULTS) return;
     strncpy(results[result_count].file, file, sizeof(results[result_count].file) - 1);
     strncpy(results[result_count].hash, hash, sizeof(results[result_count].hash) - 1);
     results[result_count].infected = infected;
+    results[result_count].suspicious = suspicious;
+    results[result_count].ai_score = ai_score;
+    results[result_count].entropy = entropy;
     result_count++;
 }
 
@@ -68,9 +74,11 @@ void report_finish(int total, int infected, double seconds, const char *filename
     for (int i = 0; i < result_count; i++) {
         fputs("    {\"file\": \"", f);
         json_write_escaped(f, results[i].file);
-        fprintf(f, "\", \"status\": \"%s\", \"hash\": \"%s\"}%s\n",
-            results[i].infected ? "INFECTED" : "CLEAN",
+        fprintf(f, "\", \"status\": \"%s\", \"hash\": \"%s\", \"ai_score\": %.2f, \"entropy\": %.2f}%s\n",
+            results[i].infected ? "INFECTED" : (results[i].suspicious ? "SUSPICIOUS" : "CLEAN"),
             results[i].hash,
+            results[i].ai_score,
+            results[i].entropy,
             (i == result_count - 1) ? "" : ",");
     }
 
