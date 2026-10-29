@@ -16,6 +16,21 @@ static ScanResult results[MAX_RESULTS];
 static int result_count = 0;
 static char scan_path[512];
 
+// Write a string to a FILE with JSON escaping (backslashes, quotes, control chars).
+static void json_write_escaped(FILE *f, const char *s) {
+    if (!s) return;
+    for (const char *p = s; *p; ++p) {
+        switch (*p) {
+            case '\\': fputs("\\\\", f); break;
+            case '"':  fputs("\\\"", f); break;
+            case '\n': fputs("\\n", f); break;
+            case '\r': fputs("\\r", f); break;
+            case '\t': fputs("\\t", f); break;
+            default:   fputc(*p, f); break;
+        }
+    }
+}
+
 // Start a new report
 void report_start(const char *path) {
     result_count = 0;
@@ -41,7 +56,9 @@ void report_finish(int total, int infected, double seconds, const char *filename
     }
 
     fprintf(f, "{\n");
-    fprintf(f, "  \"scan_path\": \"%s\",\n", scan_path);
+    fputs("  \"scan_path\": \"", f);
+    json_write_escaped(f, scan_path);
+    fputs("\",\n", f);
     fprintf(f, "  \"total_files\": %d,\n", total);
     fprintf(f, "  \"infected\": %d,\n", infected);
     fprintf(f, "  \"clean\": %d,\n", total - infected);
@@ -49,8 +66,9 @@ void report_finish(int total, int infected, double seconds, const char *filename
     fprintf(f, "  \"results\": [\n");
 
     for (int i = 0; i < result_count; i++) {
-        fprintf(f, "    {\"file\": \"%s\", \"status\": \"%s\", \"hash\": \"%s\"}%s\n",
-            results[i].file,
+        fputs("    {\"file\": \"", f);
+        json_write_escaped(f, results[i].file);
+        fprintf(f, "\", \"status\": \"%s\", \"hash\": \"%s\"}%s\n",
             results[i].infected ? "INFECTED" : "CLEAN",
             results[i].hash,
             (i == result_count - 1) ? "" : ",");

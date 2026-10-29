@@ -12,7 +12,7 @@
 
 /* -------- Configuration -------- */
 static const size_t BLOOM_BITS = 14377588UL; /* ~14.38M bits => ~1.72 MB */
-static const unsigned BLOOM_HASH_COUNT = 10; /* k hash functions (double hashing) */
+#define BLOOM_HASH_COUNT 10 /* k hash functions (double hashing) */
 
 /* -------- Bloom filter data -------- */
 static unsigned char *bloom_bits = NULL;

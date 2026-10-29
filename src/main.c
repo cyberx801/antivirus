@@ -46,7 +46,6 @@ void print_banner(void) {
 void print_help(void);
 void print_info(void);
 void print_summary(int total, int infected, double seconds);
-void save_json_report(const char *filename, int total, int infected, double seconds);
 
 // Optional future modules (stubs)
 //void update_signatures(void);
@@ -75,24 +74,28 @@ int main(int argc, char *argv[]) {
     // ----------------------------- SCAN DIRECTORY -----------------------------
     if (strcmp(command, "scan") == 0 && argc >= 3) {
         const char *directory = argv[2];
+
+        // Parse flags BEFORE scanning so that e.g. --quarantine takes effect.
+        int want_summary = 0;
+        for (int i = 3; i < argc; i++) {
+            if (strcmp(argv[i], "--summary") == 0)
+                want_summary = 1;
+            else if (strcmp(argv[i], "--quarantine") == 0)
+                quarantine_enable();
+            // --json-report: the detailed JSON report is always written below
+        }
+
         log_message(LOG_INFO, "Scanning directory: %s", directory);
-        report_start(directory);
         start = clock();
-        infected = scan_directory(directory, &total);  // modified scanner
+        infected = scan_directory(directory, &total);  // report_start() is done inside
         end = clock();
         elapsed = (double)(end - start) / CLOCKS_PER_SEC;
+
+        // Always write the detailed JSON report (includes per-file results).
         report_finish(total, infected, elapsed, "data/report.json");
-        // Optional flags
-        if (argc > 3) {
-            for (int i = 3; i < argc; i++) {
-                if (strcmp(argv[i], "--summary") == 0)
-                    print_summary(total, infected, elapsed);
-                else if (strcmp(argv[i], "--json-report") == 0)
-                    save_json_report("data/report.json", total, infected, elapsed);
-                else if (strcmp(argv[i], "--quarantine") == 0)
-                    quarantine_enable();
-            }
-        }
+
+        if (want_summary)
+            print_summary(total, infected, elapsed);
     }
 
     // ----------------------------- CHECK FILE -----------------------------
@@ -164,21 +167,6 @@ void print_summary(int total, int infected, double seconds) {
     printf("Clean files:         %d\n", total - infected);
     printf("Scan time:           %.2f seconds\n", seconds);
     printf("--------------------------\n");
-}
-
-void save_json_report(const char *filename, int total, int infected, double seconds) {
-    FILE *f = fopen(filename, "w");
-    if (!f) return;
-    fprintf(f,
-        "{\n"
-        "  \"total_files\": %d,\n"
-        "  \"infected\": %d,\n"
-        "  \"clean\": %d,\n"
-        "  \"scan_time\": %.2f\n"
-        "}\n",
-        total, infected, total - infected, seconds);
-    fclose(f);
-    log_message(LOG_INFO, "JSON report saved to %s", filename);
 }
 
 

@@ -33,7 +33,11 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
 
 static int ensure_dir(const char *path) {
     struct stat st;
+#ifdef _WIN32
+    if (stat(path, &st) == 0 && (st.st_mode & _S_IFDIR)) {
+#else
     if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+#endif
         log_message(LOG_INFO, "Directory already exists: %s", path);
         return 0; // already exists
     }
@@ -82,8 +86,8 @@ static int download_file(const char *url, const char *out_path) {
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "HashGuard/1.0");
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
     CURLcode res = curl_easy_perform(curl);
     fclose(fp);
@@ -134,6 +138,7 @@ static int extract_hashes(const char *infile, char hashes[][65], int *count) {
         }
 
         if (pos == 64) {
+            if (*count >= MAX_HASHES) break;  // hard cap to prevent buffer overflow
             hex[64] = 0;
             strcpy(hashes[*count], hex);
             (*count)++;
@@ -146,7 +151,14 @@ static int extract_hashes(const char *infile, char hashes[][65], int *count) {
 }
 
 /**
- * @brief Deduplicate hashes and save final signatures.txt.
+ * @brief Comparator for sorting 65-byte hash strings.
+ */
+static int cmp_hash(const void *a, const void *b) {
+    return strcmp((const char *)a, (const char *)b);
+}
+
+/**
+ * @brief Sort, deduplicate and save final signatures.txt (O(n log n)).
  */
 static int save_unique_hashes(char hashes[][65], int count, const char *outfile) {
     FILE *out = fopen(outfile, "w");
@@ -155,19 +167,17 @@ static int save_unique_hashes(char hashes[][65], int count, const char *outfile)
         return 0;
     }
 
+    if (count > 0)
+        qsort(hashes, (size_t)count, 65, cmp_hash);
+
     int unique = 0;
+    const char *prev = NULL;
     for (int i = 0; i < count; i++) {
-        int dup = 0;
-        for (int j = 0; j < i; j++) {
-            if (strcmp(hashes[i], hashes[j]) == 0) {
-                dup = 1;
-                break;
-            }
-        }
-        if (!dup) {
-            fprintf(out, "%s\n", hashes[i]);
-            unique++;
-        }
+        if (prev && strcmp(prev, hashes[i]) == 0)
+            continue;  // duplicate (array is sorted)
+        fprintf(out, "%s\n", hashes[i]);
+        prev = hashes[i];
+        unique++;
     }
 
     fclose(out);
@@ -243,9 +253,9 @@ void update_signatures(void) {
     FeedSource feeds[] = {
 
         {
-            "ThreatFox_SHA256",
-            "https://threatfox.abuse.ch/export/sha256/full/",
-            "data/cache/threatfox_sha256.txt",
+            "ThreatCluster_SHA256",
+            "https://threatcluster.io/api/iocs/public/hashes.txt",
+            "data/cache/threatcluster_hashes.txt",
             0
         },
 
