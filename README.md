@@ -1,13 +1,15 @@
-# 🛡 HashGuard — Sentinel
+# HashGuard — Sentinel
 
-> **A lightweight, signature-based antivirus prototype in C.**
-> Scan files, hash them with SHA-256, match them against a threat-intel signature database, quarantine the bad guys — and let a tiny AI heuristic sniff out anything the signatures miss.
+A lightweight, signature-based antivirus prototype written in C. It walks
+directory trees, fingerprints files with SHA-256, matches them against a
+threat-intelligence signature database, quarantines confirmed hits, and uses a
+small heuristic AI layer to flag anything the signatures miss.
 
-![Language](https://img.shields.io/badge/language-C11-blue)
-![Build](https://img.shields.io/badge/build-CMake%20%2B%20MSVC%20%7C%20GCC-green)
-![Deps](https://img.shields.io/badge/deps-OpenSSL%2C%20libcurl-orange)
-![Status](https://img.shields.io/badge/status-prototype-yellow)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
+[![Language](https://img.shields.io/badge/language-C11-blue)](#)
+[![Build](https://img.shields.io/badge/build-CMake%20%7C%20MSVC%20%7C%20GCC-green)](#)
+[![CI](https://github.com/cyberx801/antivirus/actions/workflows/build.yml/badge.svg)](https://github.com/cyberx801/antivirus/actions)
+[![Deps](https://img.shields.io/badge/deps-OpenSSL%2C%20libcurl-orange)](#)
+[![Status](https://img.shields.io/badge/status-prototype-yellow)](#)
 
 ```
   ██╗  ██╗ █████╗ ███████╗██╗  ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗
@@ -18,103 +20,138 @@
   ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
 ```
 
-## ✨ Features
+## Features
 
-- 🔍 **Recursive directory scanning** — cross-platform (Win32 API / POSIX `nftw`)
-- 🔐 **SHA-256 fingerprinting** via OpenSSL
-- ⚡ **Bloom filter + UTHash** — O(1)-style signature lookup over huge databases
-- 🧠 **AI heuristics** — Shannon-entropy scoring + extension risk profile, with an optional LLM (OpenAI-compatible) triage hook
-- 🚨 **Quarantine** — infected files are moved away and logged (`--quarantine`)
-- 📊 **JSON report** — per-file status, hash, AI score and entropy (`data/report.json`)
-- 🔄 **Self-updating signatures** — pulls threat-intel feeds with a 7-day cache
-- 🎨 Fancy ANSI banner (because why not)
+- **Recursive directory scanning** with a configurable worker-thread pool
+  (`--threads N`); cross-platform (Win32 API on Windows, `nftw` on POSIX).
+- **SHA-256 fingerprinting** via OpenSSL, streamed in 1 KiB chunks.
+- **Bloom filter + UTHash** signature store: fast rejection of clean hashes,
+  exact verification of candidate hits.
+- **Heuristic AI engine**: Shannon-entropy scoring of the file head plus a
+  risky-extension profile; optional LLM confirmation via any
+  OpenAI-compatible chat API.
+- **Quarantine and restore**: infected files are moved out of the way
+  (`--quarantine`) and can be brought back with `restore`.
+- **Whitelist**: `data/whitelist.txt` skips matching paths during scans.
+- **JSON report** (`data/report.json`): per-file status, hash, AI score and
+  entropy, always emitted as valid, escaped JSON.
+- **Self-updating signatures**: downloads threat-intel feeds with a 7-day
+  on-disk cache and de-duplication.
+- **CI**: GitHub Actions builds the project on Windows (MSVC) and Linux (GCC)
+  on every push.
 
-## 🧱 How it works
+## How it works
 
 ```
- file ──► SHA-256 ──► Bloom filter? ──no──► CLEAN
-                        │yes (maybe)
-                        ▼
-                 UTHash exact match?
-                   │ yes            │ no
-                   ▼                ▼
-                INFECTED      AI heuristic (entropy + ext)
-                (quarantine)        │
-                                    ▼
-                             SUSPICIOUS / CLEAN
+ file ── SHA-256 ── Bloom filter ── not present ── CLEAN
+                        |
+                      maybe
+                        |
+                 UTHash exact lookup
+                   |               |
+                present        not present
+                   |               |
+               INFECTED        AI heuristic
+             (quarantined)     (entropy + ext)
+                                   |
+                         suspicious / benign
 ```
 
-1. Every file is hashed (SHA-256, 1 KB streaming chunks).
-2. The hash is probed against a **Bloom filter** (fast negative answer).
-3. Possible hits are verified with an **exact UTHash lookup** — no false positives.
-4. Signature misses are passed to the **AI module**: Shannon entropy of the file head + risky-extension score. Optionally, a configured LLM confirms the verdict.
-5. Results land in a valid, escaped **JSON report**; infected files can be quarantined automatically.
+1. Each file is hashed with SHA-256.
+2. The hash is probed against a **Bloom filter** — a negative answer is instant
+   and exact.
+3. Positive probes are confirmed with an **exact UTHash lookup**, so the
+   signature layer has no false positives.
+4. Files without a signature match go through the **AI module**: Shannon
+   entropy of the first 64 KiB plus extension risk. Optionally, a configured
+   LLM returns a one-word verdict for files already flagged suspicious.
+5. Everything lands in a JSON report; infected files may be quarantined
+   automatically.
 
-## 🏗 Architecture
+Classification is three-tier: `INFECTED` (signature match, quarantined),
+`SUSPICIOUS` (heuristic/AI flag, not quarantined), `CLEAN`.
+
+## Architecture
 
 | Module | File | Responsibility |
 |---|---|---|
-| CLI & banner | `src/main.c` | Argument parsing, commands, summary |
+| CLI and banner | `src/main.c` | Commands, flags, summary output |
 | Logger | `src/logger.c` | Timestamped log lines |
 | Hashing | `src/hash.c` | SHA-256 of a file (OpenSSL) |
-| Signature DB | `src/sigdb.c` | Bloom filter + UTHash, load/lookup/free |
-| Scanner | `src/scanner.c` | Recursive directory walk + verdict pipeline |
-| Report | `src/report.c` | JSON report generation |
-| Quarantine | `src/quarantine.c` | Move + log malicious files |
-| Updater | `src/update.c` | Feed download, 7-day cache, dedup, metadata |
+| Signature DB | `src/sigdb.c` | Bloom filter + UTHash load/lookup |
+| Scanner | `src/scanner.c` | Threaded directory walk, verdict pipeline, whitelist |
+| Report | `src/report.c` | Thread-safe JSON report writer |
+| Quarantine | `src/quarantine.c` | Move, log and restore files |
+| Updater | `src/update.c` | Feed download, 7-day cache, de-duplication |
 | AI engine | `src/ai.c` | Entropy heuristics + optional LLM hook |
+| Thread utils | `src/threadutil.c` | Win32/pthreads mutex, condvar, threads |
 
-## 🔧 Build
+## Building
 
 ### Windows (MSVC + vcpkg)
 
-```powershell
-# prerequisites: Visual Studio Build Tools, CMake >= 4.0, vcpkg with openssl + curl
-vcpkg install openssl curl:x64-windows
+Prerequisites: Visual Studio Build Tools, CMake >= 4.0, vcpkg.
 
-cmake -S . -B build -G Ninja ^
+```powershell
+vcpkg install openssl curl --triplet x64-windows
+
+cmake -S . -B build -G Ninja `
   -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build build
 ```
 
-> The project also configures cleanly from **CLion** (CMake 4.0 bundle).
+The project also configures directly from CLion.
 
 ### Linux (GCC)
 
 ```bash
 sudo apt install libssl-dev libcurl4-openssl-dev
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-## 🚀 Usage
+## Usage
 
 ```bash
-# Scan a directory, print a summary and quarantine threats
-./antivirus scan ./downloads --summary --quarantine
+# Scan a directory with 8 worker threads; print a summary and quarantine hits
+./antivirus scan ./downloads --summary --quarantine --threads 8
 
-# Check a single file
+# Check a single file against the signature database
 ./antivirus check ./suspicious.exe
 
 # Update signatures from threat-intel feeds (7-day cache)
 ./antivirus update
+
+# Bring a quarantined file back into the current directory
+./antivirus restore file.exe
 
 # Show info / help
 ./antivirus info
 ./antivirus --help
 ```
 
-## 🤖 AI engine
+### Whitelist
 
-Two layers, no Python required:
+Create `data/whitelist.txt` with one path substring per line. Any scanned file
+whose path contains a listed substring is skipped and logged as `[SKIPPED]`.
+
+```
+# data/whitelist.txt
+node_modules/
+C:\Windows\
+```
+
+## AI engine
+
+The AI layer has two parts and no Python dependency:
 
 1. **Offline heuristics (always on)** — Shannon entropy of the first 64 KiB
-   (packed/encrypted binaries are high-entropy) combined with a risky-extension
-   profile (`.exe`, `.dll`, `.scr`, `.vbs`, `.ps1`, `.js`, …).
-2. **Optional LLM triage (opt-in)** — when a file is already flagged suspicious
-   and these environment variables are set, HashGuard asks an
-   OpenAI-compatible chat API for a one-word verdict:
+   (packed or encrypted binaries are high-entropy) combined with a
+   risky-extension profile (`.exe`, `.dll`, `.scr`, `.pif`, `.com`, `.vbs`,
+   `.js`, `.ps1`, `.bat`, `.cmd`, `.jar`, `.msi`, `.hta`, `.wsf`).
+2. **Optional LLM triage (opt-in)** — when a file is already flagged
+   suspicious by the heuristic and the following environment variables are
+   set, HashGuard asks an OpenAI-compatible chat API for a one-word verdict:
 
 ```bash
 export HASHGUARD_AI_URL="https://api.openai.com/v1/chat/completions"
@@ -122,53 +159,56 @@ export HASHGUARD_AI_KEY="sk-..."
 export HASHGUARD_AI_MODEL="gpt-4o-mini"   # optional, defaults to gpt-4o-mini
 ```
 
-If the API is unreachable or unconfigured, the tool silently falls back to the
-local heuristic — it never breaks the scan.
+If the API is unreachable or unconfigured, the scan silently falls back to the
+local heuristic. To keep API costs bounded, the LLM is only consulted for
+files the heuristic already flagged.
 
-## 📦 Signature feeds
+## Signature feeds
 
-The updater downloads plain-text hash feeds and extracts valid 64-char SHA-256
-entries. Currently configured with a **keyless** public feed:
+The updater downloads plain-text hash feeds and extracts valid 64-character
+SHA-256 entries. The default feed is keyless:
 
-- [ThreatCluster](https://threatcluster.io) — high-confidence file hashes (last 30 days)
+- [ThreatCluster](https://threatcluster.io) — high-confidence file hashes
+  (last 30 days)
 
-> Note: abuse.ch retired its unauthenticated export endpoints (HTTP 410), so
-> feeds are easy to swap — just edit the `FeedSource` table in `src/update.c`.
+abuse.ch retired its unauthenticated export endpoints (HTTP 410), so the feed
+table in `src/update.c` is designed to be easy to extend or replace.
 
-## 📁 Project structure
+## Project structure
 
 ```
 .
 ├── CMakeLists.txt
 ├── README.md
-├── include/          # headers (incl. vendored uthash.h)
-├── src/              # C sources
+├── .github/workflows/build.yml   # CI (Windows + Linux)
+├── include/                      # headers, incl. vendored uthash.h
+├── src/                          # C sources
 └── data/
-    ├── signatures.txt        # one SHA-256 per line (generated by `update`)
-    ├── cache/                # downloaded feed cache (7 days)
-    └── report.json           # last scan report (generated)
+    ├── signatures.txt            # one SHA-256 per line (generated by update)
+    ├── whitelist.txt             # skip-list for scans
+    ├── cache/                    # feed cache (7 days, generated)
+    └── report.json               # last scan report (generated)
 ```
 
-## 🗺 Roadmap
+## Roadmap
 
-- [ ] Parallel scanning (thread pool)
-- [ ] MD5/SHA-1 signature support
-- [ ] Restore-from-quarantine command
-- [ ] YARA rule engine
+- [ ] MD5 and SHA-1 signature support
 - [ ] Real-time directory watcher
-- [ ] Config file & whitelist
-- [ ] CI pipeline (Windows + Linux)
+- [ ] YARA rule engine
+- [ ] Persistent Bloom filter cache
+- [ ] Config file (feeds, scan defaults)
+- [ ] Unit tests
 
-## ⚠️ Disclaimer
+## Disclaimer
 
-This is an **educational prototype**, not a substitute for a real endpoint
-security product. Signature feeds are community-provided; the AI heuristic is
-best-effort. Use at your own risk.
+This is an educational prototype, not a substitute for a real endpoint
+security product. Signature feeds are community-provided, and the heuristic
+AI layer is best-effort. Use at your own risk.
 
-## 📄 License
+## License
 
-MIT — feel free to fork, break, and improve.
+MIT — fork it, break it, improve it.
 
 ---
 
-*Crafted by **Fatih Özdil** — HashGuard v1.1 "Sentinel"*
+*HashGuard v1.2 "Sentinel" — Fatih Özdil*

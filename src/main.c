@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "../include/logger.h"
@@ -45,7 +46,7 @@ void print_banner(void) {
 
     printf(COLOR_YELLOW
         "  ═══════════════════════════════════════════════════════════════════════════\n"
-        "   \xF0\x9F\x9B\xA1  HashGuard v1.1 — Sentinel  |  Signature intelligence & threat scan\n"
+        "   \xF0\x9F\x9B\xA1  HashGuard v1.2 — Sentinel  |  Signature intelligence & threat scan\n"
         "  ═══════════════════════════════════════════════════════════════════════════\n"
         COLOR_RESET);
 
@@ -95,17 +96,19 @@ int main(int argc, char *argv[]) {
 
         // Parse flags BEFORE scanning so that e.g. --quarantine takes effect.
         int want_summary = 0;
+        int threads = 4;
         for (int i = 3; i < argc; i++) {
             if (strcmp(argv[i], "--summary") == 0)
                 want_summary = 1;
             else if (strcmp(argv[i], "--quarantine") == 0)
                 quarantine_enable();
-            // --json-report: the detailed JSON report is always written below
+            else if (strcmp(argv[i], "--threads") == 0 && i + 1 < argc)
+                threads = atoi(argv[++i]);
         }
 
         log_message(LOG_INFO, "Scanning directory: %s", directory);
         start = clock();
-        infected = scan_directory(directory, &total);  // report_start() is done inside
+        infected = scan_directory(directory, &total, threads);  // report_start() is done inside
         end = clock();
         elapsed = (double)(end - start) / CLOCKS_PER_SEC;
 
@@ -138,6 +141,12 @@ int main(int argc, char *argv[]) {
         log_message(LOG_INFO, "*** MAIN: update_signatures() FINISHED ***");
     }
 
+    // ----------------------------- RESTORE FROM QUARANTINE -----------------------------
+    else if (strcmp(command, "restore") == 0 && argc >= 3) {
+        log_message(LOG_INFO, "Restoring file: %s", argv[2]);
+        quarantine_restore(argv[2]);
+    }
+
     // ----------------------------- INFO -----------------------------
     else if (strcmp(command, "info") == 0) {
         print_info();
@@ -163,19 +172,20 @@ int main(int argc, char *argv[]) {
 
 void print_help(void) {
     printf("\nUsage:\n");
-    printf("  ./antivirus scan <directory> [--summary] [--json-report] [--quarantine]\n");
+    printf("  ./antivirus scan <directory> [--summary] [--quarantine] [--threads N]\n");
     printf("  ./antivirus check <file>\n");
     printf("  ./antivirus update\n");
+    printf("  ./antivirus restore <filename>\n");
     printf("  ./antivirus info\n");
     printf("  ./antivirus --help\n\n");
 }
 
 void print_info(void) {
-    printf("\nSmart Antivirus v1.1 (C version) — Sentinel\n");
+    printf("\nSmart Antivirus v1.2 (C version) — Sentinel\n");
     printf("Developer: Fatih Özdil\n");
     printf("Modules: Logger | Scanner | SigDB | Bloom Filter | UTHash | Quarantine | Update | AI\n");
     printf("Signature DB: data/signatures.txt\n");
-    printf("Features: CLI, Summary, JSON Report, Quarantine, Update, AI heuristics\n\n");
+    printf("Features: CLI, Summary, JSON Report, Quarantine+Restore, Update, AI heuristics, Multi-threaded scan, Whitelist\n\n");
 }
 
 void print_summary(int total, int infected, double seconds) {

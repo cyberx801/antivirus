@@ -80,3 +80,24 @@ void move_to_quarantine(const char *filepath, const char *hash) {
 
     fclose(logf);
 }
+
+int quarantine_restore(const char *filename) {
+    if (!filename || !*filename) {
+        log_message(LOG_ERROR, "Restore: no filename given.");
+        return -1;
+    }
+
+    char src[512];
+    snprintf(src, sizeof(src), "quarantine/%s", filename);
+
+    /* Move back to the current working directory; refuse to overwrite. */
+    if (rename(src, filename) == 0) {
+        log_message(LOG_INFO, "File restored: %s -> %s", src, filename);
+        return 0;
+    }
+
+    log_message(LOG_ERROR,
+        "Failed to restore '%s' (missing from quarantine, or a file with the same name already exists here).",
+        filename);
+    return -1;
+}

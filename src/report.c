@@ -1,10 +1,27 @@
 #include "../include/report.h"
 #include "../include/logger.h"
+#include "../include/threadutil.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #define MAX_RESULTS 10000
+
+static tu_mutex_t report_mtx;
+static int report_lock_init = 0;
+
+static void report_lock(void) {
+    if (!report_lock_init) {
+        tu_mutex_init(&report_mtx);
+        report_lock_init = 1;
+    }
+    tu_mutex_lock(report_mtx);
+}
+
+static void report_unlock(void) {
+    tu_mutex_unlock(report_mtx);
+}
 
 typedef struct {
     char file[512];
@@ -36,14 +53,20 @@ static void json_write_escaped(FILE *f, const char *s) {
 
 // Start a new report
 void report_start(const char *path) {
+    report_lock();
     result_count = 0;
     strncpy(scan_path, path, sizeof(scan_path) - 1);
     scan_path[sizeof(scan_path) - 1] = '\0';
+    report_unlock();
 }
 
-// Add a file result
+// Add a file result (thread-safe)
 void report_add_result(const char *file, const char *hash, int infected, int suspicious, double ai_score, double entropy) {
-    if (result_count >= MAX_RESULTS) return;
+    report_lock();
+    if (result_count >= MAX_RESULTS) {
+        report_unlock();
+        return;
+    }
     strncpy(results[result_count].file, file, sizeof(results[result_count].file) - 1);
     strncpy(results[result_count].hash, hash, sizeof(results[result_count].hash) - 1);
     results[result_count].infected = infected;
@@ -51,6 +74,7 @@ void report_add_result(const char *file, const char *hash, int infected, int sus
     results[result_count].ai_score = ai_score;
     results[result_count].entropy = entropy;
     result_count++;
+    report_unlock();
 }
 
 // Finish and write JSON file

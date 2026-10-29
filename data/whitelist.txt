@@ -1,0 +1,6 @@
+# HashGuard whitelist
+# One path substring per line; files whose path contains any of these are skipped.
+# Lines starting with '#' are ignored.
+# Examples:
+# node_modules/
+# C:\Windows\

@@ -17,6 +17,7 @@ add_executable(antivirus
         src/quarantine.c
         src/update.c
         src/ai.c
+        src/threadutil.c
 )
 
 if(MSVC)
@@ -36,4 +37,5 @@ if(NOT TARGET CURL::curl)
             INTERFACE_INCLUDE_DIRECTORIES "C:/vcpkg/installed/x64-windows/include"
     )
 endif()
-target_link_libraries(antivirus PRIVATE OpenSSL::Crypto OpenSSL::SSL CURL::curl ws2_32 wldap32 crypt32)
+find_package(Threads REQUIRED)
+target_link_libraries(antivirus PRIVATE OpenSSL::Crypto OpenSSL::SSL CURL::curl ws2_32 wldap32 crypt32 Threads::Threads)
